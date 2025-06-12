@@ -1,4 +1,4 @@
-name: Build Python App
+name: Build Python App Cross-Platform
 
 on:
   push:
@@ -6,18 +6,49 @@ on:
   pull_request:
     branches: [ "main" ]
 
-permissions:
-  contents: write  # Required for uploading artifacts or releases
-
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            id: linux
+            platform: linux
+            pyinstaller_args: "--onefile"
+            artifact_name: main-linux_x86_64
+
+          - os: windows-latest
+            id: win64
+            platform: win64
+            pyinstaller_args: "--onefile"
+            artifact_name: main-win64.exe
+
+          - os: windows-latest
+            id: win32
+            platform: win32
+            pyinstaller_args: "--onefile --target-arch=32bit"
+            artifact_name: main-win32.exe
+
+          - os: macos-13  # Intel runner
+            id: mac_intel
+            platform: macos_intel
+            pyinstaller_args: "--onefile"
+            artifact_name: main-mac-intel
+
+          - os: macos-14  # Apple Silicon runner
+            id: mac_silicon
+            platform: macos_silicon
+            pyinstaller_args: "--onefile"
+            artifact_name: main-mac-silicon
+
+    runs-on: ${{ matrix.os }}
+    name: Build ${{ matrix.platform }}
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v3
+    - name: Set up Python
+      uses: actions/setup-python@v4
       with:
         python-version: "3.10"
 
@@ -27,12 +58,22 @@ jobs:
         pip install pyinstaller
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-    - name: Build with PyInstaller
+    - name: Build executable
       run: |
-        pyinstaller --onefile main.py
+        pyinstaller ${{ matrix.pyinstaller_args }} main.py
 
-    - name: Upload executable
+    - name: Rename and move binary
+      run: |
+        mkdir -p dist_release
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          mv dist/main.exe dist_release/${{ matrix.artifact_name }}
+        else
+          mv dist/main dist_release/${{ matrix.artifact_name }}
+        fi
+      shell: bash
+
+    - name: Upload build artifact
       uses: actions/upload-artifact@v4
       with:
-        name: main-exe
-        path: dist/main  # 'main.exe' if on Windows, 'main' on Linux/macOS
+        name: ${{ matrix.artifact_name }}
+        path: dist_release/${{ matrix.artifact_name }}
